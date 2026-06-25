@@ -1,0 +1,103 @@
+name: CI/CD - Tienda Perritos EKS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: tienda-perritos
+  EKS_NAMESPACE: tienda
+  FRONTEND_REPO: tienda-frontend
+  BACKEND_REPO: tienda-backend
+  DB_REPO: tienda-db
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag imagen
+        run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Build & push Frontend
+        run: |
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/$FRONTEND_REPO:$TAG ./frontend
+          docker tag ${{ steps.login-ecr.outputs.registry }}/$FRONTEND_REPO:$TAG ${{ steps.login-ecr.outputs.registry }}/$FRONTEND_REPO:latest
+          docker push --all-tags ${{ steps.login-ecr.outputs.registry }}/$FRONTEND_REPO
+
+      - name: Build & push Backend
+        run: |
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/$BACKEND_REPO:$TAG ./backend
+          docker tag ${{ steps.login-ecr.outputs.registry }}/$BACKEND_REPO:$TAG ${{ steps.login-ecr.outputs.registry }}/$BACKEND_REPO:latest
+          docker push --all-tags ${{ steps.login-ecr.outputs.registry }}/$BACKEND_REPO
+
+      - name: Build & push DB
+        run: |
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/$DB_REPO:$TAG ./db
+          docker tag ${{ steps.login-ecr.outputs.registry }}/$DB_REPO:$TAG ${{ steps.login-ecr.outputs.registry }}/$DB_REPO:latest
+          docker push --all-tags ${{ steps.login-ecr.outputs.registry }}/$DB_REPO
+
+      - name: Instalar kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Configurar kubeconfig
+        run: |
+          aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER
+
+      - name: Reemplazar imagenes en manifests
+        run: |
+          sed -i "s|{{ECR_URL}}|${{ steps.login-ecr.outputs.registry }}|g" k8s/*.yaml
+
+      - name: Desplegar MySQL
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/mysql-secret.yaml
+          kubectl apply -f k8s/mysql-deployment.yaml
+          kubectl apply -f k8s/mysql-service.yaml
+          kubectl rollout status deployment/tienda-db -n $EKS_NAMESPACE --timeout=300s
+
+      - name: Desplegar Backend
+        run: |
+          kubectl apply -f k8s/backend-deployment.yaml
+          kubectl apply -f k8s/backend-service.yaml
+          kubectl rollout status deployment/tienda-backend -n $EKS_NAMESPACE --timeout=300s
+
+      - name: Desplegar Frontend
+        run: |
+          kubectl apply -f k8s/frontend-deployment.yaml
+          kubectl apply -f k8s/frontend-service.yaml
+          kubectl rollout status deployment/tienda-frontend -n $EKS_NAMESPACE --timeout=300s
+
+      - name: Aplicar HPA
+        run: |
+          kubectl apply -f k8s/backend-hpa.yaml 2>/dev/null || true
+          kubectl apply -f k8s/frontend-hpa.yaml 2>/dev/null || true
+
+      - name: Obtener endpoint
+        run: |
+          echo "URL=$(kubectl get svc tienda-frontend -n $EKS_NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')" >> $GITHUB_ENV
+
+      - name: Verificar estado
+        run: |
+          kubectl get pods -n $EKS_NAMESPACE
+          kubectl get svc -n $EKS_NAMESPACE
+          echo ""
+          echo "Aplicacion disponible en: http://$URL"

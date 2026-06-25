@@ -1,0 +1,23 @@
+{
+  "clusterName": "tienda-perritos",
+  "nodegroupName": "tienda-nodes",
+  "scalingConfig": {
+    "minSize": 1,
+    "maxSize": 3,
+    "desiredSize": 2
+  },
+  "subnets": [
+    "subnet-0301dd9c6fba1c1db",
+    "subnet-046d9946a85f21375",
+    "subnet-07bb96d5aff93e023",
+    "subnet-0969cdc686373a870",
+    "subnet-0083c27e90bb2dfc2"
+  ],
+  "instanceTypes": ["t3.medium"],
+  "nodeRole": "arn:aws:iam::933499830430:role/c212772a5382393l15035673t1w933499830-LabEksNodeRole-VSicr299tdfq",
+  "diskSize": 20,
+  "capacityType": "ON_DEMAND",
+  "labels": {
+    "project": "tienda-perritos"
+  }
+}
