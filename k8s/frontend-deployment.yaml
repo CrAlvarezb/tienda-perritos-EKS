@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: 933499830430.dkr.ecr.us-east-1.amazonaws.com/tienda-frontend:latest
+          image: {{ECR_URL}}/tienda-frontend:latest
           ports:
             - containerPort: 80
 
