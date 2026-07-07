@@ -1,4 +1,4 @@
-name: CI/CD - Tienda Perritos EKS
+﻿name: CI/CD - Tienda Perritos EKS
 
 on:
   push:
@@ -19,6 +19,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Test backend
+        run: |
+          cd backend
+          npm install
+          npm test
 
       - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v6
@@ -101,3 +112,4 @@ jobs:
           kubectl get svc -n $EKS_NAMESPACE
           echo ""
           echo "Aplicacion disponible en: http://$URL"
+
